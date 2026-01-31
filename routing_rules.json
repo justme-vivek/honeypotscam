@@ -1,0 +1,20 @@
+{
+  "default": ["console"],
+  "rules": [
+    {
+      "name": "Critical alerts to multiple channels",
+      "condition": {"field": "severity", "value": "CRITICAL"},
+      "actions": ["console"]
+    },
+    {
+      "name": "Payment service alerts",
+      "condition": {"field": "service", "value": "payment"},
+      "actions": ["console"]
+    },
+    {
+      "name": "Error level warnings",
+      "condition": {"field": "severity", "value": "ERROR"},
+      "actions": ["console"]
+    }
+  ]
+}
