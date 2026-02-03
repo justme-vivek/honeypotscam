@@ -1,6 +1,6 @@
 """
 Interactive Chat with Honeypot Agent
-Type your message as a scammer, get response from Kamla Devi
+Type your message as a scammer, get response from Amit Sharma
 Type 'quit' to exit
 """
 import requests
@@ -18,7 +18,7 @@ conversation_history = []
 
 print("=" * 50)
 print("HONEYPOT CHAT - You are the SCAMMER")
-print("The agent (Kamla Devi) will respond")
+print("The agent (Amit Sharma) will respond")
 print("Type 'quit' to exit")
 print("=" * 50)
 
@@ -43,7 +43,7 @@ while True:
         data = response.json()
         
         agent_reply = data.get("response", {}).get("text", "...")
-        print(f"\n[Kamla Devi]: {agent_reply}")
+        print(f"\n[Amit Sharma]: {agent_reply}")
         
         # Update history
         conversation_history.append({"sender": "scammer", "text": user_input})

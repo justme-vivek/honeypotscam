@@ -1,0 +1,717 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>🗄️ Database Viewer - Honeypot Scam Detection</title>
+    <style>
+      * {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+      }
+      body {
+        font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+        background: linear-gradient(135deg, #0f0f23 0%, #1a1a3e 100%);
+        min-height: 100vh;
+        color: #e0e0e0;
+        padding: 20px;
+      }
+      .container {
+        max-width: 1600px;
+        margin: 0 auto;
+      }
+
+      h1 {
+        text-align: center;
+        margin-bottom: 10px;
+        color: #00d4ff;
+      }
+      .subtitle {
+        text-align: center;
+        color: #888;
+        margin-bottom: 20px;
+      }
+
+      .config-bar {
+        background: rgba(0, 0, 0, 0.3);
+        padding: 15px;
+        border-radius: 8px;
+        margin-bottom: 20px;
+        display: flex;
+        gap: 20px;
+        align-items: center;
+        flex-wrap: wrap;
+      }
+      .config-bar input {
+        padding: 10px;
+        border: 1px solid rgba(255, 255, 255, 0.2);
+        border-radius: 6px;
+        background: rgba(0, 0, 0, 0.3);
+        color: #fff;
+        width: 250px;
+      }
+      .config-bar label {
+        color: #aaa;
+        margin-right: 10px;
+      }
+
+      button {
+        padding: 10px 20px;
+        border: none;
+        border-radius: 6px;
+        cursor: pointer;
+        font-weight: bold;
+        transition: all 0.3s;
+        margin-right: 10px;
+      }
+      .btn-primary {
+        background: #00d4ff;
+        color: #000;
+      }
+      .btn-primary:hover {
+        background: #00a8cc;
+      }
+      .btn-success {
+        background: #00ff88;
+        color: #000;
+      }
+      .btn-warning {
+        background: #ffaa00;
+        color: #000;
+      }
+      .btn-danger {
+        background: #ff4444;
+        color: #fff;
+      }
+
+      .tabs {
+        display: flex;
+        gap: 5px;
+        margin-bottom: 20px;
+        flex-wrap: wrap;
+      }
+      .tab {
+        padding: 12px 24px;
+        background: rgba(255, 255, 255, 0.05);
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        border-radius: 8px 8px 0 0;
+        cursor: pointer;
+        transition: all 0.3s;
+        color: #aaa;
+      }
+      .tab:hover {
+        background: rgba(255, 255, 255, 0.1);
+      }
+      .tab.active {
+        background: rgba(0, 212, 255, 0.2);
+        border-color: #00d4ff;
+        color: #00d4ff;
+      }
+
+      .db-panel {
+        display: none;
+        background: rgba(255, 255, 255, 0.03);
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        border-radius: 0 12px 12px 12px;
+        padding: 20px;
+      }
+      .db-panel.active {
+        display: block;
+      }
+
+      .table-container {
+        margin-bottom: 30px;
+        overflow-x: auto;
+      }
+      .table-title {
+        color: #00d4ff;
+        margin-bottom: 10px;
+        font-size: 1.1em;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+      }
+      .table-title .count {
+        background: rgba(0, 212, 255, 0.2);
+        padding: 2px 10px;
+        border-radius: 20px;
+        font-size: 0.8em;
+      }
+
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 0.85em;
+      }
+      th,
+      td {
+        padding: 10px 12px;
+        text-align: left;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+      }
+      th {
+        background: rgba(0, 212, 255, 0.1);
+        color: #00d4ff;
+        font-weight: 600;
+        position: sticky;
+        top: 0;
+      }
+      tr:hover {
+        background: rgba(255, 255, 255, 0.03);
+      }
+
+      .badge {
+        display: inline-block;
+        padding: 3px 10px;
+        border-radius: 20px;
+        font-size: 0.8em;
+        font-weight: bold;
+      }
+      .badge-scam {
+        background: #ff4444;
+        color: #fff;
+      }
+      .badge-safe {
+        background: #00ff88;
+        color: #000;
+      }
+      .badge-pending {
+        background: #ffaa00;
+        color: #000;
+      }
+      .badge-pushed {
+        background: #00d4ff;
+        color: #000;
+      }
+
+      .text-truncate {
+        max-width: 300px;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .text-truncate:hover {
+        white-space: normal;
+        word-break: break-word;
+      }
+
+      .json-cell {
+        max-width: 200px;
+        font-family: monospace;
+        font-size: 0.8em;
+        color: #00ff88;
+      }
+
+      .empty-state {
+        text-align: center;
+        padding: 40px;
+        color: #666;
+      }
+      .empty-state .icon {
+        font-size: 3em;
+        margin-bottom: 10px;
+      }
+
+      .stats-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+        gap: 15px;
+        margin-bottom: 20px;
+      }
+      .stat-card {
+        background: rgba(0, 0, 0, 0.3);
+        padding: 20px;
+        border-radius: 8px;
+        text-align: center;
+      }
+      .stat-card .value {
+        font-size: 2em;
+        font-weight: bold;
+        color: #00d4ff;
+      }
+      .stat-card .label {
+        color: #888;
+        margin-top: 5px;
+      }
+
+      .loading {
+        text-align: center;
+        padding: 40px;
+        color: #ffaa00;
+      }
+      .loading::after {
+        content: "";
+        animation: dots 1.5s infinite;
+      }
+      @keyframes dots {
+        0%,
+        20% {
+          content: ".";
+        }
+        40% {
+          content: "..";
+        }
+        60%,
+        100% {
+          content: "...";
+        }
+      }
+
+      .last-updated {
+        color: #666;
+        font-size: 0.85em;
+        margin-top: 10px;
+      }
+
+      .auto-refresh {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+      }
+      .auto-refresh input {
+        width: auto;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <h1>🗄️ Database Viewer</h1>
+      <p class="subtitle">
+        Honeypot Scam Detection System - Live Database Monitor
+      </p>
+
+      <!-- Config Bar -->
+      <div class="config-bar">
+        <div>
+          <label>API URL:</label>
+          <input type="text" id="baseUrl" value="http://localhost:8000" />
+        </div>
+        <div>
+          <label>API Key:</label>
+          <input type="text" id="apiKey" value="dev-secret-key-12345" />
+        </div>
+        <button class="btn-primary" onclick="loadAllData()">
+          🔄 Refresh All
+        </button>
+        <div class="auto-refresh">
+          <input
+            type="checkbox"
+            id="autoRefresh"
+            onchange="toggleAutoRefresh()"
+          />
+          <label for="autoRefresh">Auto-refresh every 5s</label>
+        </div>
+        <span id="lastUpdated" class="last-updated"></span>
+      </div>
+
+      <!-- Tabs -->
+      <div class="tabs">
+        <div class="tab active" onclick="switchTab('current')">
+          📍 Current Sessions
+        </div>
+        <div class="tab" onclick="switchTab('archive')">📦 Chat Archive</div>
+        <div class="tab" onclick="switchTab('scams')">🚨 Scam Intelligence</div>
+        <div class="tab" onclick="switchTab('stats')">📊 Statistics</div>
+      </div>
+
+      <!-- Current Sessions Panel -->
+      <div id="panel-current" class="db-panel active">
+        <div id="current-content">
+          <div class="loading">Loading current sessions</div>
+        </div>
+      </div>
+
+      <!-- Archive Panel -->
+      <div id="panel-archive" class="db-panel">
+        <div id="archive-content">
+          <div class="loading">Loading archived sessions</div>
+        </div>
+      </div>
+
+      <!-- Scams Panel -->
+      <div id="panel-scams" class="db-panel">
+        <div id="scams-content">
+          <div class="loading">Loading scam intelligence</div>
+        </div>
+      </div>
+
+      <!-- Stats Panel -->
+      <div id="panel-stats" class="db-panel">
+        <div id="stats-content">
+          <div class="loading">Loading statistics</div>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      let autoRefreshInterval = null;
+      let dbData = {};
+
+      function getConfig() {
+        return {
+          baseUrl: document.getElementById("baseUrl").value,
+          apiKey: document.getElementById("apiKey").value,
+        };
+      }
+
+      function switchTab(tabName) {
+        document
+          .querySelectorAll(".tab")
+          .forEach((t) => t.classList.remove("active"));
+        document
+          .querySelectorAll(".db-panel")
+          .forEach((p) => p.classList.remove("active"));
+
+        event.target.classList.add("active");
+        document.getElementById(`panel-${tabName}`).classList.add("active");
+      }
+
+      async function loadAllData() {
+        const config = getConfig();
+        try {
+          const res = await fetch(`${config.baseUrl}/api/view-db/all`, {
+            headers: { "x-api-key": config.apiKey },
+          });
+          dbData = await res.json();
+          renderAllPanels();
+          document.getElementById("lastUpdated").textContent =
+            `Last updated: ${new Date().toLocaleTimeString()}`;
+        } catch (err) {
+          console.error("Error loading data:", err);
+          document.getElementById("current-content").innerHTML =
+            `<div class="empty-state"><div class="icon">❌</div>Error loading data: ${err.message}<br>Make sure the server is running.</div>`;
+        }
+      }
+
+      function renderAllPanels() {
+        renderCurrentPanel();
+        renderArchivePanel();
+        renderScamsPanel();
+        renderStatsPanel();
+      }
+
+      function renderCurrentPanel() {
+        const data = dbData.current_session || {};
+        const sessions = data.session_info || [];
+        const messages = data.messages || [];
+        const intel = data.extracted_intel || [];
+
+        let html = "";
+
+        // Sessions table
+        html += `<div class="table-container">
+                <div class="table-title">📍 Active Sessions <span class="count">${sessions.length}</span></div>`;
+
+        if (sessions.length === 0) {
+          html += `<div class="empty-state"><div class="icon">📭</div>No active sessions</div>`;
+        } else {
+          html += `<table>
+                    <tr>
+                        <th>Session ID</th>
+                        <th>Channel</th>
+                        <th>Language</th>
+                        <th>Scam Flags</th>
+                        <th>Status</th>
+                        <th>Updated</th>
+                    </tr>`;
+          sessions.forEach((s) => {
+            const badge = s.is_confirmed_scam
+              ? '<span class="badge badge-scam">🚨 SCAM</span>'
+              : `<span class="badge badge-pending">${s.scam_flags} flags</span>`;
+            html += `<tr>
+                        <td><code>${s.session_id}</code></td>
+                        <td>${s.channel || "SMS"}</td>
+                        <td>${s.language || "English"}</td>
+                        <td>${s.scam_flags || 0}</td>
+                        <td>${badge}</td>
+                        <td>${s.updated_at || "-"}</td>
+                    </tr>`;
+          });
+          html += `</table>`;
+        }
+        html += `</div>`;
+
+        // Messages table
+        html += `<div class="table-container">
+                <div class="table-title">💬 Messages <span class="count">${messages.length}</span></div>`;
+
+        if (messages.length === 0) {
+          html += `<div class="empty-state"><div class="icon">💭</div>No messages yet</div>`;
+        } else {
+          html += `<table>
+                    <tr>
+                        <th>ID</th>
+                        <th>Session</th>
+                        <th>Sender</th>
+                        <th>Text</th>
+                        <th>Scam Flag</th>
+                        <th>Time</th>
+                    </tr>`;
+          messages.forEach((m) => {
+            const senderIcon = m.is_response ? "🤖" : "👤";
+            const flagBadge = m.is_scam_flag
+              ? '<span class="badge badge-scam">🚩</span>'
+              : "";
+            html += `<tr>
+                        <td>${m.id}</td>
+                        <td><code>${(m.session_id || "").substring(0, 12)}...</code></td>
+                        <td>${senderIcon} ${m.sender}</td>
+                        <td class="text-truncate">${m.text || ""}</td>
+                        <td>${flagBadge}</td>
+                        <td>${m.created_at || "-"}</td>
+                    </tr>`;
+          });
+          html += `</table>`;
+        }
+        html += `</div>`;
+
+        // Intelligence table
+        html += `<div class="table-container">
+                <div class="table-title">🔍 Extracted Intelligence <span class="count">${intel.length}</span></div>`;
+
+        if (intel.length === 0) {
+          html += `<div class="empty-state"><div class="icon">🔎</div>No intelligence extracted yet</div>`;
+        } else {
+          html += `<table>
+                    <tr>
+                        <th>Session</th>
+                        <th>UPI IDs</th>
+                        <th>Phone Numbers</th>
+                        <th>Phishing Links</th>
+                        <th>Keywords</th>
+                        <th>Notes</th>
+                    </tr>`;
+          intel.forEach((i) => {
+            html += `<tr>
+                        <td><code>${(i.session_id || "").substring(0, 12)}...</code></td>
+                        <td class="json-cell">${i.upi_ids || "[]"}</td>
+                        <td class="json-cell">${i.phone_numbers || "[]"}</td>
+                        <td class="json-cell">${i.phishing_links || "[]"}</td>
+                        <td class="json-cell">${i.suspicious_keywords || "[]"}</td>
+                        <td class="text-truncate">${i.agent_notes || "-"}</td>
+                    </tr>`;
+          });
+          html += `</table>`;
+        }
+        html += `</div>`;
+
+        document.getElementById("current-content").innerHTML = html;
+      }
+
+      function renderArchivePanel() {
+        const data = dbData.chat_sessions || {};
+        const sessions = data.sessions || [];
+        const messages = data.messages || [];
+
+        let html = "";
+
+        // Sessions table
+        html += `<div class="table-container">
+                <div class="table-title">📦 Archived Sessions <span class="count">${sessions.length}</span></div>`;
+
+        if (sessions.length === 0) {
+          html += `<div class="empty-state"><div class="icon">📭</div>No archived sessions yet</div>`;
+        } else {
+          html += `<table>
+                    <tr>
+                        <th>Session ID</th>
+                        <th>Channel</th>
+                        <th>Messages</th>
+                        <th>Was Scam</th>
+                        <th>Flags</th>
+                        <th>Completed</th>
+                    </tr>`;
+          sessions.forEach((s) => {
+            const badge = s.is_scam
+              ? '<span class="badge badge-scam">🚨 YES</span>'
+              : '<span class="badge badge-safe">✅ No</span>';
+            html += `<tr>
+                        <td><code>${s.session_id}</code></td>
+                        <td>${s.channel || "SMS"}</td>
+                        <td>${s.total_messages || 0}</td>
+                        <td>${badge}</td>
+                        <td>${s.scam_flags_count || 0}</td>
+                        <td>${s.completed_at || "-"}</td>
+                    </tr>`;
+          });
+          html += `</table>`;
+        }
+        html += `</div>`;
+
+        // Recent messages
+        html += `<div class="table-container">
+                <div class="table-title">💬 Recent Archived Messages <span class="count">${messages.length}</span></div>`;
+
+        if (messages.length === 0) {
+          html += `<div class="empty-state"><div class="icon">💭</div>No archived messages</div>`;
+        } else {
+          html += `<table>
+                    <tr>
+                        <th>ID</th>
+                        <th>Session</th>
+                        <th>Sender</th>
+                        <th>Text</th>
+                        <th>Time</th>
+                    </tr>`;
+          messages.slice(0, 20).forEach((m) => {
+            const senderIcon = m.is_response ? "🤖" : "👤";
+            html += `<tr>
+                        <td>${m.id}</td>
+                        <td><code>${(m.session_id || "").substring(0, 12)}...</code></td>
+                        <td>${senderIcon} ${m.sender}</td>
+                        <td class="text-truncate">${m.text || ""}</td>
+                        <td>${m.created_at || "-"}</td>
+                    </tr>`;
+          });
+          html += `</table>`;
+        }
+        html += `</div>`;
+
+        document.getElementById("archive-content").innerHTML = html;
+      }
+
+      function renderScamsPanel() {
+        const data = dbData.scam_session || {};
+        const scams = data.scam_intelligence || [];
+
+        let html = "";
+
+        html += `<div class="table-container">
+                <div class="table-title">🚨 Confirmed Scam Intelligence <span class="count">${scams.length}</span></div>`;
+
+        if (scams.length === 0) {
+          html += `<div class="empty-state"><div class="icon">🛡️</div>No confirmed scams detected yet</div>`;
+        } else {
+          html += `<table>
+                    <tr>
+                        <th>Session ID</th>
+                        <th>Messages</th>
+                        <th>UPI IDs</th>
+                        <th>Phone Numbers</th>
+                        <th>Phishing Links</th>
+                        <th>Keywords</th>
+                        <th>GUVI Status</th>
+                        <th>Created</th>
+                    </tr>`;
+          scams.forEach((s) => {
+            const guviBadge = s.pushed_to_guvi
+              ? '<span class="badge badge-pushed">✅ Pushed</span>'
+              : '<span class="badge badge-pending">⏳ Pending</span>';
+            html += `<tr>
+                        <td><code>${s.session_id}</code></td>
+                        <td>${s.total_messages_exchanged || 0}</td>
+                        <td class="json-cell">${s.upi_ids || "[]"}</td>
+                        <td class="json-cell">${s.phone_numbers || "[]"}</td>
+                        <td class="json-cell">${s.phishing_links || "[]"}</td>
+                        <td class="json-cell">${s.suspicious_keywords || "[]"}</td>
+                        <td>${guviBadge}</td>
+                        <td>${s.created_at || "-"}</td>
+                    </tr>`;
+          });
+          html += `</table>`;
+        }
+        html += `</div>`;
+
+        // GUVI Payload Preview
+        if (scams.length > 0) {
+          const pending = scams.find((s) => !s.pushed_to_guvi);
+          if (pending) {
+            const payload = {
+              sessionId: pending.session_id,
+              scamDetected: true,
+              totalMessagesExchanged: pending.total_messages_exchanged,
+              extractedIntelligence: {
+                bankAccounts: JSON.parse(pending.bank_accounts || "[]"),
+                upiIds: JSON.parse(pending.upi_ids || "[]"),
+                phishingLinks: JSON.parse(pending.phishing_links || "[]"),
+                phoneNumbers: JSON.parse(pending.phone_numbers || "[]"),
+                suspiciousKeywords: JSON.parse(
+                  pending.suspicious_keywords || "[]",
+                ),
+              },
+              agentNotes: pending.agent_notes || "",
+            };
+            html += `<div class="table-container">
+                        <div class="table-title">📤 GUVI Payload Preview (Next to Push)</div>
+                        <pre style="background:rgba(0,0,0,0.3);padding:15px;border-radius:8px;overflow-x:auto;color:#00ff88;font-size:0.85em;">${JSON.stringify(payload, null, 2)}</pre>
+                    </div>`;
+          }
+        }
+
+        document.getElementById("scams-content").innerHTML = html;
+      }
+
+      function renderStatsPanel() {
+        const current = dbData.current_session || {};
+        const archive = dbData.chat_sessions || {};
+        const scams = dbData.scam_session || {};
+
+        const activeSessions = (current.session_info || []).length;
+        const activeMessages = (current.messages || []).length;
+        const archivedSessions = (archive.sessions || []).length;
+        const archivedMessages = (archive.messages || []).length;
+        const confirmedScams = (scams.scam_intelligence || []).length;
+        const pendingPush = (scams.scam_intelligence || []).filter(
+          (s) => !s.pushed_to_guvi,
+        ).length;
+        const pushedToGuvi = confirmedScams - pendingPush;
+
+        const scamRate =
+          archivedSessions > 0
+            ? Math.round((confirmedScams / archivedSessions) * 100)
+            : 0;
+
+        let html = `
+            <div class="stats-grid">
+                <div class="stat-card">
+                    <div class="value">${activeSessions}</div>
+                    <div class="label">Active Sessions</div>
+                </div>
+                <div class="stat-card">
+                    <div class="value">${activeMessages}</div>
+                    <div class="label">Active Messages</div>
+                </div>
+                <div class="stat-card">
+                    <div class="value">${archivedSessions}</div>
+                    <div class="label">Archived Sessions</div>
+                </div>
+                <div class="stat-card">
+                    <div class="value">${archivedMessages}</div>
+                    <div class="label">Archived Messages</div>
+                </div>
+                <div class="stat-card">
+                    <div class="value" style="color:#ff4444;">${confirmedScams}</div>
+                    <div class="label">Confirmed Scams</div>
+                </div>
+                <div class="stat-card">
+                    <div class="value" style="color:#ffaa00;">${pendingPush}</div>
+                    <div class="label">Pending GUVI Push</div>
+                </div>
+                <div class="stat-card">
+                    <div class="value" style="color:#00ff88;">${pushedToGuvi}</div>
+                    <div class="label">Pushed to GUVI</div>
+                </div>
+                <div class="stat-card">
+                    <div class="value">${scamRate}%</div>
+                    <div class="label">Scam Detection Rate</div>
+                </div>
+            </div>
+            `;
+
+        document.getElementById("stats-content").innerHTML = html;
+      }
+
+      function toggleAutoRefresh() {
+        if (document.getElementById("autoRefresh").checked) {
+          autoRefreshInterval = setInterval(loadAllData, 5000);
+        } else {
+          clearInterval(autoRefreshInterval);
+        }
+      }
+
+      // Load data on page load
+      loadAllData();
+    </script>
+  </body>
+</html>

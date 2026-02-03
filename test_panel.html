@@ -1,0 +1,518 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>🎣 Honeypot API Testing Panel</title>
+    <style>
+      * {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+      }
+      body {
+        font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+        background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+        min-height: 100vh;
+        color: #e0e0e0;
+        padding: 20px;
+      }
+      .container {
+        max-width: 1400px;
+        margin: 0 auto;
+      }
+      h1 {
+        text-align: center;
+        margin-bottom: 20px;
+        color: #00d4ff;
+      }
+      .header-info {
+        text-align: center;
+        margin-bottom: 20px;
+        color: #888;
+      }
+
+      .grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 20px;
+      }
+      @media (max-width: 1000px) {
+        .grid {
+          grid-template-columns: 1fr;
+        }
+      }
+
+      .panel {
+        background: rgba(255, 255, 255, 0.05);
+        border-radius: 12px;
+        padding: 20px;
+        border: 1px solid rgba(255, 255, 255, 0.1);
+      }
+      .panel h2 {
+        color: #00d4ff;
+        margin-bottom: 15px;
+        font-size: 1.2em;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+        padding-bottom: 10px;
+      }
+
+      .form-group {
+        margin-bottom: 15px;
+      }
+      label {
+        display: block;
+        margin-bottom: 5px;
+        color: #aaa;
+        font-size: 0.9em;
+      }
+      input,
+      textarea,
+      select {
+        width: 100%;
+        padding: 10px;
+        border: 1px solid rgba(255, 255, 255, 0.2);
+        border-radius: 6px;
+        background: rgba(0, 0, 0, 0.3);
+        color: #fff;
+        font-family: monospace;
+      }
+      textarea {
+        min-height: 100px;
+        resize: vertical;
+      }
+
+      button {
+        padding: 12px 24px;
+        border: none;
+        border-radius: 6px;
+        cursor: pointer;
+        font-weight: bold;
+        transition: all 0.3s;
+        margin-right: 10px;
+        margin-bottom: 10px;
+      }
+      .btn-primary {
+        background: #00d4ff;
+        color: #000;
+      }
+      .btn-primary:hover {
+        background: #00a8cc;
+        transform: translateY(-2px);
+      }
+      .btn-success {
+        background: #00ff88;
+        color: #000;
+      }
+      .btn-success:hover {
+        background: #00cc6a;
+      }
+      .btn-warning {
+        background: #ffaa00;
+        color: #000;
+      }
+      .btn-warning:hover {
+        background: #cc8800;
+      }
+      .btn-danger {
+        background: #ff4444;
+        color: #fff;
+      }
+      .btn-danger:hover {
+        background: #cc3333;
+      }
+
+      .response-box {
+        background: rgba(0, 0, 0, 0.4);
+        border-radius: 8px;
+        padding: 15px;
+        margin-top: 15px;
+        font-family: monospace;
+        font-size: 0.9em;
+        max-height: 300px;
+        overflow-y: auto;
+        white-space: pre-wrap;
+        word-break: break-word;
+      }
+      .response-box.success {
+        border-left: 4px solid #00ff88;
+      }
+      .response-box.error {
+        border-left: 4px solid #ff4444;
+      }
+      .response-box.loading {
+        border-left: 4px solid #ffaa00;
+      }
+
+      .status-badge {
+        display: inline-block;
+        padding: 4px 12px;
+        border-radius: 20px;
+        font-size: 0.8em;
+        margin-left: 10px;
+      }
+      .status-badge.online {
+        background: #00ff88;
+        color: #000;
+      }
+      .status-badge.offline {
+        background: #ff4444;
+        color: #fff;
+      }
+
+      .config-bar {
+        background: rgba(0, 0, 0, 0.3);
+        padding: 15px;
+        border-radius: 8px;
+        margin-bottom: 20px;
+        display: flex;
+        gap: 20px;
+        align-items: center;
+        flex-wrap: wrap;
+      }
+      .config-bar input {
+        max-width: 300px;
+      }
+
+      .quick-tests {
+        margin-top: 20px;
+      }
+      .quick-test-btn {
+        display: inline-block;
+        padding: 8px 16px;
+        background: rgba(0, 212, 255, 0.2);
+        border: 1px solid rgba(0, 212, 255, 0.3);
+        border-radius: 20px;
+        color: #00d4ff;
+        cursor: pointer;
+        margin: 5px;
+        font-size: 0.85em;
+        transition: all 0.3s;
+      }
+      .quick-test-btn:hover {
+        background: rgba(0, 212, 255, 0.4);
+      }
+
+      .history-item {
+        background: rgba(0, 0, 0, 0.2);
+        padding: 10px;
+        margin-bottom: 10px;
+        border-radius: 6px;
+        font-size: 0.85em;
+      }
+      .history-item .time {
+        color: #666;
+      }
+      .history-item .status {
+        float: right;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <h1>🎣 Honeypot Scam Detection - API Testing Panel</h1>
+      <p class="header-info">Test your honeypot API endpoints manually</p>
+
+      <!-- Config Bar -->
+      <div class="config-bar">
+        <div class="form-group" style="margin: 0">
+          <label>API Base URL</label>
+          <input type="text" id="baseUrl" value="http://localhost:8000" />
+        </div>
+        <div class="form-group" style="margin: 0">
+          <label>API Key (x-api-key)</label>
+          <input type="text" id="apiKey" value="dev-secret-key-12345" />
+        </div>
+        <div>
+          <button class="btn-primary" onclick="checkHealth()">
+            🔍 Check Health
+          </button>
+          <span id="healthStatus"></span>
+        </div>
+      </div>
+
+      <div class="grid">
+        <!-- Left Column: Chat Test -->
+        <div class="panel">
+          <h2>💬 POST /api/chat - Scam Message Test</h2>
+
+          <div class="form-group">
+            <label>Session ID</label>
+            <input type="text" id="sessionId" value="test-session-001" />
+          </div>
+
+          <div class="form-group">
+            <label>Scammer Message</label>
+            <textarea id="scamMessage">
+Your bank account will be blocked today. Verify immediately by calling 9876543210 or send OTP now!</textarea
+            >
+          </div>
+
+          <div class="form-group">
+            <label>Channel</label>
+            <select id="channel">
+              <option value="SMS">SMS</option>
+              <option value="WhatsApp">WhatsApp</option>
+              <option value="Email">Email</option>
+              <option value="Call">Call</option>
+            </select>
+          </div>
+
+          <button class="btn-primary" onclick="sendChatMessage()">
+            📤 Send Message
+          </button>
+          <button class="btn-warning" onclick="clearChat()">🗑️ Clear</button>
+
+          <div class="quick-tests">
+            <strong>Quick Tests:</strong><br />
+            <span class="quick-test-btn" onclick="quickTest('bank')"
+              >🏦 Bank Fraud</span
+            >
+            <span class="quick-test-btn" onclick="quickTest('upi')"
+              >💳 UPI Scam</span
+            >
+            <span class="quick-test-btn" onclick="quickTest('police')"
+              >👮 Police Threat</span
+            >
+            <span class="quick-test-btn" onclick="quickTest('job')"
+              >💼 Job Scam</span
+            >
+            <span class="quick-test-btn" onclick="quickTest('tech')"
+              >🖥️ Tech Support</span
+            >
+            <span class="quick-test-btn" onclick="quickTest('electricity')"
+              >⚡ Utility Scam</span
+            >
+            <span class="quick-test-btn" onclick="quickTest('link')"
+              >🔗 Phishing Link</span
+            >
+            <span class="quick-test-btn" onclick="quickTest('otp')"
+              >🔢 OTP Scam</span
+            >
+          </div>
+
+          <div id="chatResponse" class="response-box">
+            Response will appear here...
+          </div>
+        </div>
+
+        <!-- Right Column: Session Management -->
+        <div class="panel">
+          <h2>📊 Session Management</h2>
+
+          <div class="form-group">
+            <label>Session ID for Actions</label>
+            <input type="text" id="actionSessionId" value="test-session-001" />
+          </div>
+
+          <button class="btn-success" onclick="getSessionStatus()">
+            📋 Get Status
+          </button>
+          <button class="btn-warning" onclick="endSession()">
+            🏁 End Session
+          </button>
+          <button class="btn-danger" onclick="finalizeTimeout()">
+            ⏰ Force Timeout Check
+          </button>
+
+          <div id="sessionResponse" class="response-box">
+            Session info will appear here...
+          </div>
+
+          <h2 style="margin-top: 20px">📤 GUVI Callback</h2>
+          <button class="btn-primary" onclick="pushToGuvi()">
+            🚀 Push Pending to GUVI
+          </button>
+          <div id="guviResponse" class="response-box">
+            GUVI response will appear here...
+          </div>
+
+          <h2 style="margin-top: 20px">📈 Metrics</h2>
+          <button class="btn-primary" onclick="getMetrics()">
+            📊 Get Metrics
+          </button>
+          <div id="metricsResponse" class="response-box">
+            Metrics will appear here...
+          </div>
+        </div>
+      </div>
+
+      <!-- Request History -->
+      <div class="panel" style="margin-top: 20px">
+        <h2>📜 Request History</h2>
+        <button class="btn-danger" onclick="clearHistory()">
+          🗑️ Clear History
+        </button>
+        <div
+          id="requestHistory"
+          style="margin-top: 15px; max-height: 300px; overflow-y: auto"
+        ></div>
+      </div>
+    </div>
+
+    <script>
+      const quickTestMessages = {
+        bank: "This is RBI. Your account has suspicious activity. Verify now or face legal action. Call immediately!",
+        upi: "Transfer Rs.1 to verify your account. Send to 9988776655@paytm now! Urgent verification required.",
+        police:
+          "This is cyber police. Case registered against you. Pay fine Rs.25000 or arrest warrant will be issued.",
+        job: "Work from home! Earn 50000/month. Pay 2000 registration fee. Contact: 8899001122 for immediate joining.",
+        tech: "Your computer has virus! Download AnyDesk and give code: anydesk.com/download. ID:445566. Urgent!",
+        electricity:
+          "URGENT: Your electricity will be disconnected in 2 hours. Pay Rs.3500 immediately to 7766554433@ybl",
+        link: "Click here to verify your bank account: http://sbi-secure-login.xyz/verify?id=123. Act now!",
+        otp: "Send OTP received on your phone immediately for verification. Your account will be blocked otherwise.",
+      };
+
+      let requestHistory = [];
+
+      function getConfig() {
+        return {
+          baseUrl: document.getElementById("baseUrl").value,
+          apiKey: document.getElementById("apiKey").value,
+        };
+      }
+
+      function addToHistory(method, endpoint, status, response) {
+        const time = new Date().toLocaleTimeString();
+        requestHistory.unshift({ time, method, endpoint, status, response });
+        if (requestHistory.length > 20) requestHistory.pop();
+        renderHistory();
+      }
+
+      function renderHistory() {
+        const html = requestHistory
+          .map(
+            (h) => `
+                <div class="history-item">
+                    <span class="time">${h.time}</span>
+                    <span class="status" style="color:${h.status < 300 ? "#00ff88" : "#ff4444"}">${h.status}</span>
+                    <strong>${h.method}</strong> ${h.endpoint}
+                </div>
+            `,
+          )
+          .join("");
+        document.getElementById("requestHistory").innerHTML =
+          html || "<em>No requests yet</em>";
+      }
+
+      function clearHistory() {
+        requestHistory = [];
+        renderHistory();
+      }
+
+      async function apiCall(method, endpoint, body = null, responseEl) {
+        const config = getConfig();
+        const el = document.getElementById(responseEl);
+        el.className = "response-box loading";
+        el.textContent = "Loading...";
+
+        try {
+          const options = {
+            method,
+            headers: {
+              "Content-Type": "application/json",
+              "x-api-key": config.apiKey,
+            },
+          };
+          if (body) options.body = JSON.stringify(body);
+
+          const start = Date.now();
+          const res = await fetch(config.baseUrl + endpoint, options);
+          const latency = Date.now() - start;
+          const data = await res.json();
+
+          addToHistory(method, endpoint, res.status, data);
+
+          el.className = `response-box ${res.ok ? "success" : "error"}`;
+          el.textContent = `Status: ${res.status} | Latency: ${latency}ms\n\n${JSON.stringify(data, null, 2)}`;
+          return data;
+        } catch (err) {
+          el.className = "response-box error";
+          el.textContent = `Error: ${err.message}`;
+          addToHistory(method, endpoint, "ERR", err.message);
+        }
+      }
+
+      async function checkHealth() {
+        const config = getConfig();
+        const el = document.getElementById("healthStatus");
+        try {
+          const res = await fetch(config.baseUrl + "/health");
+          if (res.ok) {
+            el.innerHTML = '<span class="status-badge online">✅ Online</span>';
+          } else {
+            el.innerHTML = '<span class="status-badge offline">❌ Error</span>';
+          }
+        } catch {
+          el.innerHTML = '<span class="status-badge offline">❌ Offline</span>';
+        }
+      }
+
+      function quickTest(type) {
+        document.getElementById("scamMessage").value = quickTestMessages[type];
+      }
+
+      async function sendChatMessage() {
+        const body = {
+          sessionId: document.getElementById("sessionId").value,
+          message: {
+            sender: "scammer",
+            text: document.getElementById("scamMessage").value,
+            timestamp: new Date().toISOString(),
+          },
+          conversationHistory: [],
+          metadata: {
+            channel: document.getElementById("channel").value,
+            language: "English",
+            locale: "IN",
+          },
+        };
+        await apiCall("POST", "/api/chat", body, "chatResponse");
+        // Sync session ID
+        document.getElementById("actionSessionId").value =
+          document.getElementById("sessionId").value;
+      }
+
+      function clearChat() {
+        document.getElementById("scamMessage").value = "";
+        document.getElementById("chatResponse").textContent =
+          "Response will appear here...";
+        document.getElementById("chatResponse").className = "response-box";
+      }
+
+      async function getSessionStatus() {
+        const sessionId = document.getElementById("actionSessionId").value;
+        await apiCall(
+          "GET",
+          `/api/session-status/${sessionId}`,
+          null,
+          "sessionResponse",
+        );
+      }
+
+      async function endSession() {
+        const body = {
+          sessionId: document.getElementById("actionSessionId").value,
+        };
+        await apiCall("POST", "/api/end-session", body, "sessionResponse");
+      }
+
+      async function finalizeTimeout() {
+        await apiCall("POST", "/api/finalize-timeout", {}, "sessionResponse");
+      }
+
+      async function pushToGuvi() {
+        await apiCall("POST", "/api/push-to-guvi", {}, "guviResponse");
+      }
+
+      async function getMetrics() {
+        await apiCall("GET", "/metrics", null, "metricsResponse");
+      }
+
+      // Check health on load
+      checkHealth();
+      renderHistory();
+    </script>
+  </body>
+</html>

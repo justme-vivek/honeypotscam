@@ -11,7 +11,7 @@ headers = {
     "x-api-key": os.getenv("x-api-key")
 }
 payload = {
-    "sessionId": "test-ollama-1",
+    "sessionId": "test-gemma-1",
     "message": {
         "sender": "scammer",
         "text": "Your bank account will be blocked. Send OTP now."

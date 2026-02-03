@@ -22,7 +22,8 @@ from typing import Optional, List, Dict, Any
 import logging
 import os
 from dotenv import load_dotenv
-from ollama_responder import generate_ollama_response
+from gemma_responder import process_incoming_message
+from db_manager import db_manager
 
 
 
@@ -302,6 +303,23 @@ class Metrics:
 metrics = Metrics()
 
 # ============================================================================
+# BACKGROUND TASK: Session Timeout Checker
+# ============================================================================
+
+import asyncio
+
+async def session_timeout_checker():
+    """Background task to finalize timed-out sessions every 60 seconds."""
+    while True:
+        try:
+            await asyncio.sleep(60)  # Check every 60 seconds
+            count = db_manager.finalize_timed_out_sessions()
+            if count > 0:
+                logger.info(f"⏰ Finalized {count} timed-out session(s)")
+        except Exception as e:
+            logger.error(f"Error in timeout checker: {e}")
+
+# ============================================================================
 # FASTAPI APPLICATION
 # ============================================================================
 
@@ -312,6 +330,12 @@ app = FastAPI(
     docs_url="/docs",
     redoc_url="/redoc",
 )
+
+@app.on_event("startup")
+async def startup_event():
+    """Start background tasks on app startup."""
+    asyncio.create_task(session_timeout_checker())
+    logger.info("🚀 Session timeout checker started (checking every 60s)")
 
 # Add CORS middleware to allow browser requests
 app.add_middleware(
@@ -405,51 +429,73 @@ async def handle_scam_message(request: Request):
         history = body.get("conversationHistory", [])
         history_length = len(history) if isinstance(history, list) else 0
         
-        # Save session
+        # Track session
         metrics.sessions_active.add(session_id)
-        db.save_session(session_id)
         
-        # Save incoming message
-        if message_text:
-            db.save_message(session_id, sender, message_text)
+        # Get metadata dict
+        metadata_dict = None
+        if body.get("metadata"):
+            metadata_dict = body["metadata"]
         
-        # Analyze for scam patterns
+        # Analyze for scam patterns FIRST
         analysis = ScamAnalyzer.analyze(message_text)
+        is_scam_flag = analysis["confidence"] > 0.3  # Flag if confidence > 30%
         
-        if analysis["confidence"] > 0.2:
+        if is_scam_flag:
             metrics.scams_detected += 1
         
-        # Generate honeypot response using Ollama
-        response_text = generate_ollama_response(
-            current_message=message_text,
-            conversation_history=history
+        # Save incoming message to current_session.db
+        db_manager.save_to_current_session(
+            session_id=session_id,
+            sender=sender,
+            text=message_text,
+            is_response=False,
+            is_scam_flag=is_scam_flag,
+            metadata=metadata_dict
         )
         
-        # Save response
-        db.save_message(session_id, "user", response_text, is_response=True)
+        # Generate honeypot response with intelligence extraction
+        result = process_incoming_message(
+            current_message=message_text,
+            conversation_history=history,
+            session_id=session_id
+        )
+        
+        response_text = result.get("reply", "")
+        intelligence = result.get("intelligence", {})
+        
+        # Ensure response_text is not empty or None
+        if not response_text or not response_text.strip():
+            response_text = "Sorry sir, network issue. Can you repeat?"
+        
+        # Save our response to current_session.db
+        db_manager.save_to_current_session(
+            session_id=session_id,
+            sender="user",
+            text=response_text,
+            is_response=True,
+            is_scam_flag=False,
+            metadata=metadata_dict
+        )
+        
+        # Update extracted intelligence
+        if intelligence:
+            db_manager.update_extracted_intel(session_id, intelligence)
+        
+        # Check if session is now confirmed scam (2+ flags)
+        scam_status = db_manager.get_session_scam_status(session_id)
+        if scam_status["is_confirmed_scam"]:
+            logger.info(f"🚨 Session {session_id} CONFIRMED as SCAM ({scam_status['scam_flags']} flags)")
         
         latency_ms = (time.time() - processing_start) * 1000
         logger.info(f"✅ Session {session_id} processed in {latency_ms:.2f}ms")
         
-        # Return response with explicit CORS headers
-        # Permissive Response Schema:
-        # 1. 'message' field as Object (primary standard)
-        # 2. 'text' and 'reply' as String fallbacks
-        
-        response_obj = {
-            "sender": "assistant",
-            "text": response_text,
-            "timestamp": datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
-        }
+        # Return response matching problem statement format exactly:
+        # { "status": "success", "reply": "message text" }
         
         content = {
-            "sessionId": session_id,
-            "message": response_obj,      # Matches Message object schema
-            "response": response_obj,     # Legacy support
-            "text": response_text,        # Fallback string
-            "reply": response_text,       # Fallback string 
-            "analysis": analysis,
-            "status": "success"
+            "status": "success",
+            "reply": response_text
         }
 
         return JSONResponse(content=content, headers={"Access-Control-Allow-Origin": "*"})
@@ -458,14 +504,14 @@ async def handle_scam_message(request: Request):
         logger.error(f"JSON decode error: {e}")
         return JSONResponse(
             status_code=400, 
-            content={"detail": "Invalid JSON format"},
+            content={"status": "error", "reply": "Invalid JSON format"},
             headers={"Access-Control-Allow-Origin": "*"}
         )
     except Exception as e:
         logger.error(f"Error processing request: {e}")
         return JSONResponse(
             status_code=500, 
-            content={"detail": str(e)},
+            content={"status": "error", "reply": str(e)},
             headers={"Access-Control-Allow-Origin": "*"}
         )
 
@@ -484,6 +530,163 @@ async def get_metrics(request: Request):
     APIKeyVerifier.verify(request)
     return metrics.get_stats()
 
+@app.get("/api/view-db/{db_type}")
+async def view_database(db_type: str, request: Request):
+    """
+    View database contents as JSON for the web panel.
+    db_type: 'current', 'archive', 'scams', or 'all'
+    REQUIRES: x-api-key header
+    """
+    APIKeyVerifier.verify(request)
+    
+    import sqlite3
+    import json as json_module
+    
+    result = {}
+    
+    def get_table_data(db_path, tables):
+        data = {}
+        try:
+            conn = sqlite3.connect(db_path)
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+            for table in tables:
+                try:
+                    cursor.execute(f"SELECT * FROM {table} ORDER BY rowid DESC LIMIT 50")
+                    rows = cursor.fetchall()
+                    data[table] = [dict(row) for row in rows]
+                except:
+                    data[table] = []
+            conn.close()
+        except Exception as e:
+            data["error"] = str(e)
+        return data
+    
+    if db_type in ['current', 'all']:
+        result['current_session'] = get_table_data(
+            'current_session.db', 
+            ['session_info', 'messages', 'extracted_intel']
+        )
+    
+    if db_type in ['archive', 'all']:
+        result['chat_sessions'] = get_table_data(
+            'chat_sessions.db',
+            ['sessions', 'messages']
+        )
+    
+    if db_type in ['scams', 'all']:
+        result['scam_session'] = get_table_data(
+            'scam_session.db',
+            ['scam_intelligence']
+        )
+    
+    return result
+
+@app.post("/api/end-session")
+async def end_session(request: Request):
+    """
+    Finalize a session - moves data from current_session.db to archive.
+    If confirmed scam (2+ flags), also saves to scam_sessions.db.
+    
+    REQUIRES: x-api-key header
+    Body: { "sessionId": "xxx" }
+    """
+    APIKeyVerifier.verify(request)
+    
+    try:
+        body = await request.json()
+        session_id = body.get("sessionId") or body.get("session_id")
+        
+        if not session_id:
+            return JSONResponse(
+                status_code=400,
+                content={"status": "error", "message": "sessionId is required"}
+            )
+        
+        # Get session status before finalizing
+        scam_status = db_manager.get_session_scam_status(session_id)
+        
+        # Finalize the session (moves to archive, scam_sessions if confirmed)
+        success = db_manager.finalize_session(session_id)
+        
+        if success:
+            # Remove from active sessions
+            metrics.sessions_active.discard(session_id)
+            
+            return JSONResponse(content={
+                "status": "success",
+                "message": f"Session {session_id} finalized",
+                "was_scam": scam_status["is_confirmed_scam"],
+                "scam_flags": scam_status["scam_flags"]
+            })
+        else:
+            return JSONResponse(
+                status_code=404,
+                content={"status": "error", "message": f"Session {session_id} not found"}
+            )
+    
+    except Exception as e:
+        logger.error(f"Error ending session: {e}")
+        return JSONResponse(
+            status_code=500,
+            content={"status": "error", "message": str(e)}
+        )
+
+@app.get("/api/session-status/{session_id}")
+async def get_session_status(session_id: str, request: Request):
+    """
+    Get current scam status for a session.
+    REQUIRES: x-api-key header
+    """
+    APIKeyVerifier.verify(request)
+    
+    scam_status = db_manager.get_session_scam_status(session_id)
+    session_data = db_manager.get_current_session_data(session_id)
+    
+    if not session_data:
+        return JSONResponse(
+            status_code=404,
+            content={"status": "error", "message": f"Session {session_id} not found"}
+        )
+    
+    return {
+        "status": "success",
+        "sessionId": session_id,
+        "scam_flags": scam_status["scam_flags"],
+        "is_confirmed_scam": scam_status["is_confirmed_scam"],
+        "message_count": len(session_data.get("messages", [])),
+        "extracted_intel": session_data.get("extracted_intel")
+    }
+
+@app.post("/api/push-to-guvi")
+async def push_to_guvi(request: Request):
+    """
+    Push all pending scam sessions to GUVI evaluation endpoint.
+    REQUIRES: x-api-key header
+    
+    Note: GUVI callback is disabled by default.
+    Set GUVI_CALLBACK_ENABLED = True in db_manager.py to enable.
+    """
+    APIKeyVerifier.verify(request)
+    
+    result = db_manager.push_all_pending_to_guvi()
+    return {"status": "success", **result}
+
+@app.post("/api/finalize-timeout")
+async def finalize_timeout_sessions(request: Request):
+    """
+    Manually trigger finalization of all timed-out sessions.
+    REQUIRES: x-api-key header
+    """
+    APIKeyVerifier.verify(request)
+    
+    count = db_manager.finalize_timed_out_sessions()
+    return {
+        "status": "success",
+        "finalized_count": count,
+        "message": f"Finalized {count} timed-out session(s)"
+    }
+
 # ============================================================================
 # STARTUP
 # ============================================================================
@@ -501,10 +704,17 @@ Server: http://localhost:8000
    Value: {API_KEY}
 
 ENDPOINTS:
-  POST /api/chat    - Process scam message (requires API key)
-  GET  /health      - Health check (no auth)
-  GET  /metrics     - Get metrics (requires API key)
-  GET  /docs        - Swagger UI (no auth)
+  POST /api/chat              - Process scam message
+  POST /api/end-session       - Finalize a session manually
+  POST /api/finalize-timeout  - Finalize all timed-out sessions
+  POST /api/push-to-guvi      - Push pending scams to GUVI
+  GET  /api/session-status/ID - Get session scam status
+  GET  /health                - Health check (no auth)
+  GET  /metrics               - Get metrics
+  GET  /docs                  - Swagger UI
+
+⏰ SESSION TIMEOUT: 5 minutes (auto-finalize)
+📤 GUVI CALLBACK: Disabled (ready when needed)
 
 Documentation: http://localhost:8000/docs
 """)
