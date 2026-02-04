@@ -99,7 +99,7 @@
 #### 1️⃣ Clone the Repository
 
 ```bash
-git clone https://github.com/yourusername/honeypotscam.git
+git clone https://github.com/justme-vivek/honeypotscam.git
 cd honeypotscam
 ```
 
