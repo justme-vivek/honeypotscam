@@ -285,7 +285,7 @@
       <div class="config-bar">
         <div>
           <label>API URL:</label>
-          <input type="text" id="baseUrl" value="http://localhost:8000" />
+          <input type="text" id="baseUrl" value="" />
         </div>
         <div>
           <label>API Key:</label>
@@ -348,6 +348,14 @@
     </div>
 
     <script>
+      // Auto-detect base URL on page load
+      window.onload = function () {
+        const baseUrlInput = document.getElementById("baseUrl");
+        if (!baseUrlInput.value) {
+          baseUrlInput.value = window.location.origin;
+        }
+      };
+
       let autoRefreshInterval = null;
       let dbData = {};
 

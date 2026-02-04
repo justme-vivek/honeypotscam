@@ -7,8 +7,9 @@ Usage:
 """
 
 from fastapi import FastAPI, Request, HTTPException
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, FileResponse, HTMLResponse
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 import uvicorn
 import json
@@ -759,6 +760,28 @@ async def finalize_timeout_sessions(request: Request):
         "finalized_count": count,
         "message": f"Finalized {count} timed-out session(s)"
     }
+
+# ============================================================================
+# HTML PANELS - Serve static HTML files
+# ============================================================================
+
+@app.get("/panel", response_class=HTMLResponse)
+async def get_test_panel():
+    """Serve the API testing panel"""
+    try:
+        with open("test_panel.html", "r", encoding="utf-8") as f:
+            return HTMLResponse(content=f.read())
+    except FileNotFoundError:
+        return HTMLResponse(content="<h1>Test panel not found</h1>", status_code=404)
+
+@app.get("/db-panel", response_class=HTMLResponse)
+async def get_db_panel():
+    """Serve the database viewer panel"""
+    try:
+        with open("view_db_panel.html", "r", encoding="utf-8") as f:
+            return HTMLResponse(content=f.read())
+    except FileNotFoundError:
+        return HTMLResponse(content="<h1>Database panel not found</h1>", status_code=404)
 
 # ============================================================================
 # STARTUP

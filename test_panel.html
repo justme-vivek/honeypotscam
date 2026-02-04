@@ -217,7 +217,7 @@
       <div class="config-bar">
         <div class="form-group" style="margin: 0">
           <label>API Base URL</label>
-          <input type="text" id="baseUrl" value="http://localhost:8000" />
+          <input type="text" id="baseUrl" value="" />
         </div>
         <div class="form-group" style="margin: 0">
           <label>API Key (x-api-key)</label>
@@ -351,6 +351,14 @@ Your bank account will be blocked today. Verify immediately by calling 987654321
     </div>
 
     <script>
+      // Auto-detect base URL on page load
+      window.onload = function () {
+        const baseUrlInput = document.getElementById("baseUrl");
+        if (!baseUrlInput.value) {
+          baseUrlInput.value = window.location.origin;
+        }
+      };
+
       const quickTestMessages = {
         bank: "This is RBI. Your account has suspicious activity. Verify now or face legal action. Call immediately!",
         upi: "Transfer Rs.1 to verify your account. Send to 9988776655@paytm now! Urgent verification required.",
