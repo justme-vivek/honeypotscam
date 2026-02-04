@@ -21,6 +21,9 @@ NVIDIA_BASE_URL = os.getenv("NVIDIA_BASE_URL")
 NVIDIA_MODEL = os.getenv("NVIDIA_MODEL")
 NVIDIA_API_KEY = os.getenv("NVIDIA_API_KEY")
 
+# Set OPENAI_API_KEY for OpenAI client compatibility
+os.environ['OPENAI_API_KEY'] = NVIDIA_API_KEY
+
 client = OpenAI(base_url=NVIDIA_BASE_URL, api_key=NVIDIA_API_KEY)
 
 # ============================================================================
