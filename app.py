@@ -527,6 +527,7 @@ async def health():
     }
 
 @app.get("/ping")
+@app.post("/ping")  # Support both GET and POST for compatibility
 async def ping():
     """Simple ping endpoint for keep-alive services (NO authentication required)."""
     return {"status": "pong", "timestamp": datetime.utcnow().isoformat()}
