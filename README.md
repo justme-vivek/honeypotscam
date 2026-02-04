@@ -365,7 +365,7 @@ honeypotscam/
 
    **Option A: UptimeRobot (Recommended)**
    - Create free account at [uptimerobot.com](https://uptimerobot.com)
-   - Add monitor: `https://your-app.onrender.com/ping`
+   - Add monitor: `https://honeypotscam.onrender.com/ping`
    - Set interval: 10 minutes
 
    **Option B: GitHub Actions**
@@ -379,7 +379,7 @@ honeypotscam/
      ping:
        runs-on: ubuntu-latest
        steps:
-         - run: curl -f https://your-app.onrender.com/ping
+         - run: curl -f https://honeypotscam.onrender.com/ping
    ```
 
 **✅ Ready for Render:** The app now uses `PORT` environment variable automatically.

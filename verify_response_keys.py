@@ -5,7 +5,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-API_URL = os.getenv("API_URL", "http://localhost:8000/api/chat")
+API_URL = os.getenv("API_URL", "https://honeypotscam.onrender.com/api/chat")
 API_KEY = os.getenv("x-api-key", "dev-secret-key-12345")
 
 payload = {
