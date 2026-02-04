@@ -24,6 +24,7 @@ import os
 from dotenv import load_dotenv
 from gemma_responder import process_incoming_message
 from db_manager import db_manager
+from guvi_reporter import GuviReporter
 
 
 
@@ -126,7 +127,7 @@ class APIKeyVerifier:
 class Database:
     """SQLite database manager"""
     
-    def __init__(self, db_path: str = "scam_sessions.db"):
+    def __init__(self, db_path: str = "scam_session.db"):
         self.db_path = db_path
         self.lock = threading.Lock()
         self.init_db()
@@ -524,6 +525,11 @@ async def health():
         "version": "1.0.0"
     }
 
+@app.get("/ping")
+async def ping():
+    """Simple ping endpoint for keep-alive services (NO authentication required)."""
+    return {"status": "pong", "timestamp": datetime.utcnow().isoformat()}
+
 @app.get("/metrics")
 async def get_metrics(request: Request):
     """Get service metrics (REQUIRES x-api-key header)"""
@@ -582,11 +588,77 @@ async def view_database(db_type: str, request: Request):
     
     return result
 
+@app.post("/api/clear-all-data")
+async def clear_all_data(request: Request):
+    """
+    DANGER: Clear ALL data from all databases.
+    This permanently deletes everything and cannot be undone.
+
+    REQUIRES: x-api-key header
+    """
+    APIKeyVerifier.verify(request)
+
+    try:
+        import os
+
+        # List of database files to clear
+        db_files = [
+            "current_session.db",
+            "chat_sessions.db",
+            "scam_session.db"
+        ]
+
+        cleared_files = []
+        errors = []
+
+        for db_file in db_files:
+            try:
+                if os.path.exists(db_file):
+                    os.remove(db_file)
+                    cleared_files.append(db_file)
+                    logger.warning(f"🗑️ Cleared database: {db_file}")
+                else:
+                    logger.info(f"Database file not found (already clear): {db_file}")
+                    cleared_files.append(db_file)
+            except Exception as e:
+                error_msg = f"Failed to clear {db_file}: {str(e)}"
+                errors.append(error_msg)
+                logger.error(f"❌ {error_msg}")
+
+        # Reset metrics
+        metrics.sessions_active.clear()
+        metrics.messages_total.set(0)
+        metrics.scams_detected.set(0)
+
+        if errors:
+            return JSONResponse(
+                status_code=207,  # Multi-status
+                content={
+                    "status": "partial_success",
+                    "message": f"Cleared {len(cleared_files)}/{len(db_files)} databases",
+                    "cleared": cleared_files,
+                    "errors": errors
+                }
+            )
+        else:
+            return JSONResponse(content={
+                "status": "success",
+                "message": f"Successfully cleared all {len(cleared_files)} databases",
+                "cleared": cleared_files
+            })
+
+    except Exception as e:
+        logger.error(f"❌ Error in clear_all_data: {e}")
+        return JSONResponse(
+            status_code=500,
+            content={"status": "error", "message": f"Clear operation failed: {str(e)}"}
+        )
+
 @app.post("/api/end-session")
 async def end_session(request: Request):
     """
     Finalize a session - moves data from current_session.db to archive.
-    If confirmed scam (2+ flags), also saves to scam_sessions.db.
+    If confirmed scam (2+ flags), also saves to scam_session.db and pushes to GUVI.
     
     REQUIRES: x-api-key header
     Body: { "sessionId": "xxx" }
@@ -607,7 +679,7 @@ async def end_session(request: Request):
         scam_status = db_manager.get_session_scam_status(session_id)
         
         # Finalize the session (moves to archive, scam_sessions if confirmed)
-        success = db_manager.finalize_session(session_id)
+        success = db_manager.finalize_session(session_id, push_to_guvi=True)
         
         if success:
             # Remove from active sessions
@@ -665,11 +737,12 @@ async def push_to_guvi(request: Request):
     REQUIRES: x-api-key header
     
     Note: GUVI callback is disabled by default.
-    Set GUVI_CALLBACK_ENABLED = True in db_manager.py to enable.
+    Set GUVI_CALLBACK_ENABLED = True in guvi_reporter.py to enable.
     """
     APIKeyVerifier.verify(request)
     
-    result = db_manager.push_all_pending_to_guvi()
+    guvi_reporter = GuviReporter()
+    result = guvi_reporter.push_all_pending_to_guvi()
     return {"status": "success", **result}
 
 @app.post("/api/finalize-timeout")
@@ -692,12 +765,15 @@ async def finalize_timeout_sessions(request: Request):
 # ============================================================================
 
 if __name__ == "__main__":
+    # Get port from environment (for Render deployment)
+    port = int(os.getenv("PORT", 8000))
+    
     print(f"""
 ╔════════════════════════════════════════════════════════════╗
 ║    🎣 Honeypot Scam Detection API                         ║
 ╚════════════════════════════════════════════════════════════╝
 
-Server: http://localhost:8000
+Server: http://localhost:{port}
 
 🔐 AUTHENTICATION:
    Header: x-api-key
@@ -714,16 +790,16 @@ ENDPOINTS:
   GET  /docs                  - Swagger UI
 
 ⏰ SESSION TIMEOUT: 5 minutes (auto-finalize)
-📤 GUVI CALLBACK: Disabled (ready when needed)
+📤 GUVI CALLBACK: Enabled (pushing to hackathon.guvi.in)
 
-Documentation: http://localhost:8000/docs
+Documentation: http://localhost:{port}/docs
 """)
     
     try:
         uvicorn.run(
             app,
             host="0.0.0.0",
-            port=8000,
+            port=port,
             log_level="info"
         )
     except Exception as e:

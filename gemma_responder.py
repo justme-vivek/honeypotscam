@@ -1,10 +1,12 @@
 import os
 import json
 import logging
-import requests
 from openai import OpenAI
 from typing import List, Dict, Optional, Any
 from dotenv import load_dotenv
+
+# Import separated modules
+from intelligence_extractor import extract_intelligence
 
 # ============================================================================
 # SETUP & CONFIGURATION
@@ -18,7 +20,6 @@ logger = logging.getLogger("HoneypotAgent")
 NVIDIA_BASE_URL = os.getenv("NVIDIA_BASE_URL")
 NVIDIA_MODEL = os.getenv("NVIDIA_MODEL")
 NVIDIA_API_KEY = os.getenv("NVIDIA_API_KEY")
-EVAL_ENDPOINT = os.getenv("EVAL_ENDPOINT")
 
 client = OpenAI(base_url=NVIDIA_BASE_URL, api_key=NVIDIA_API_KEY)
 
@@ -40,7 +41,7 @@ VARY YOUR RESPONSES based on scam type:
 
 BANK/ACCOUNT THREAT → Worried about pension money, ask for employee ID
 JOB OFFER → Interested but confused, ask for company details
-TECH SUPPORT → Don't understand computers, ask for phone number to call back  
+TECH SUPPORT → Don't understand computers, ask for phone number to call back
 ELECTRICITY/UTILITY → Worried bill is overdue, ask who to pay to
 POLICE/LEGAL → Very scared and innocent, ask for badge/case number
 OTP/VERIFICATION → Confused about technology, ask for their number
@@ -48,7 +49,6 @@ MONEY TRANSFER → Willing but need help, ask for UPI details
 LINK/PHISHING → Phone screen small, ask them to call instead
 
 EXAMPLE RESPONSES:
-
 "Your account will be blocked" → "Oh god! What happened to my account sir? I am very scared. Can you give me your employee ID so I can verify?"
 
 "Pay electricity bill now to 9876@ybl" → "My electricity will go? Please sir no! Let me note down your details. What is your name?"
@@ -60,28 +60,6 @@ EXAMPLE RESPONSES:
 "Work from home, earn 50000" → "50000 per month? That is more than my pension! What is this job? What is your company name?"
 
 Now respond naturally to what the scammer says. Be specific to their message."""
-
-# ============================================================================
-# PROMPT 2: THE DETECTIVE (INTELLIGENCE EXTRACTION)
-# ============================================================================
-
-EXTRACTION_SYSTEM_PROMPT = """Analyze the conversation and extract scam intelligence.
-
-EXTRACT THESE:
-- bankAccounts: Any 9-18 digit numbers
-- upiIds: Patterns like name@bank, number@ybl, xyz@paytm
-- phishingLinks: Any URLs or links (http, https, bit.ly)
-- phoneNumbers: 10-digit numbers or +91 numbers
-- suspiciousKeywords: Words like "block", "verify", "urgent", "KYC", "OTP", "suspend"
-
-OUTPUT ONLY THIS JSON (no other text):
-{"scamDetected": true, "extractedIntelligence": {"bankAccounts": [], "upiIds": [], "phishingLinks": [], "phoneNumbers": [], "suspiciousKeywords": []}, "agentNotes": "summary of scam tactic"}
-
-EXAMPLE:
-Conversation: "Your account blocked. Send ₹500 to 9876543210@ybl urgently"
-Output: {"scamDetected": true, "extractedIntelligence": {"bankAccounts": [], "upiIds": ["9876543210@ybl"], "phishingLinks": [], "phoneNumbers": [], "suspiciousKeywords": ["blocked", "urgently"]}, "agentNotes": "Scammer using account block threat to extract money via UPI"}
-
-Now analyze the conversation and output ONLY the JSON:"""
 
 # ============================================================================
 # CORE FUNCTIONS
@@ -179,62 +157,6 @@ def _generate_persona_reply(messages: List[Dict]) -> str:
         logger.error(f"Persona Generation Error: {e}")
         return "Beta, my internet is slow... what did you say?"
 
-def _extract_intelligence(history_text: str) -> Dict:
-    """Pass 2: Analyze history to extract JSON data."""
-    try:
-        # Combine instruction and conversation in single user message for Gemma
-        combined_prompt = f"{EXTRACTION_SYSTEM_PROMPT}\n\nConversation:\n{history_text}"
-        
-        messages = [
-            {"role": "user", "content": combined_prompt}
-        ]
-        
-        # Using NVIDIA API with streaming
-        response = client.chat.completions.create(
-            model=NVIDIA_MODEL,
-            messages=messages,
-            temperature=0.1,
-            top_p=0.7,
-            max_tokens=512,
-            stream=True,
-        )
-        
-        # Collect streamed response
-        content = ""
-        for chunk in response:
-            if chunk.choices and chunk.choices[0].delta.content is not None:
-                content += chunk.choices[0].delta.content
-        
-        # Clean up and extract JSON
-        content = content.strip()
-        
-        # Try to find JSON in the response
-        if "```json" in content:
-            content = content.split("```json")[1].split("```")[0]
-        elif "```" in content:
-            content = content.split("```")[1].split("```")[0]
-        
-        # Find JSON object boundaries
-        start_idx = content.find("{")
-        end_idx = content.rfind("}") + 1
-        if start_idx != -1 and end_idx > start_idx:
-            content = content[start_idx:end_idx]
-            
-        return json.loads(content.strip())
-    except Exception as e:
-        logger.error(f"Extraction Error: {e}")
-        return {
-            "scamDetected": True,  # Default to true for safety
-            "extractedIntelligence": {
-                "bankAccounts": [],
-                "upiIds": [],
-                "phishingLinks": [],
-                "phoneNumbers": [],
-                "suspiciousKeywords": ["suspicious"]
-            }, 
-            "agentNotes": "Automated extraction - manual review recommended"
-        }
-
 # ============================================================================
 # MAIN AGENT LOGIC
 # ============================================================================
@@ -273,7 +195,7 @@ def process_incoming_message(
 
     # --- STEP 3: EXTRACT INTELLIGENCE (DETECTIVE) ---
     logger.info("🔍 Extracting intelligence from conversation...")
-    intelligence_data = _extract_intelligence(full_history_text)
+    intelligence_data = extract_intelligence(full_history_text)
 
     return {
         "reply": reply_text,
@@ -295,42 +217,6 @@ def generate_gemma_response(
         session_id="default"
     )
     return result["reply"]
-
-# ============================================================================
-# REPORTING (CALLBACK) - DISABLED FOR NOW
-# ============================================================================
-
-# def send_final_guvi_report(
-#     session_id: str, 
-#     intelligence: Dict, 
-#     total_messages: int
-# ):
-#     """Sends the mandatory callback to the Hackathon Evaluation Endpoint."""
-#     payload = {
-#         "sessionId": session_id,
-#         "scamDetected": intelligence.get("scamDetected", True),
-#         "totalMessagesExchanged": total_messages,
-#         "extractedIntelligence": intelligence.get("extractedIntelligence", {
-#             "bankAccounts": [],
-#             "upiIds": [],
-#             "phishingLinks": [],
-#             "phoneNumbers": [],
-#             "suspiciousKeywords": []
-#         }),
-#         "agentNotes": intelligence.get("agentNotes", "Automated scan completed.")
-#     }
-#
-#     try:
-#         logger.info(f"📤 Sending Final Report for {session_id}...")
-#         response = requests.post(EVAL_ENDPOINT, json=payload, timeout=10)
-#         
-#         if response.status_code == 200:
-#             logger.info("✅ Report delivered successfully.")
-#         else:
-#             logger.error(f"❌ Report failed: {response.status_code} - {response.text}")
-#             
-#     except Exception as e:
-#         logger.error(f"❌ Connection error sending report: {e}")
 
 # ============================================================================
 # TEST

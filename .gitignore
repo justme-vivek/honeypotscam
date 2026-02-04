@@ -1,0 +1,124 @@
+# ============================================================================
+# Python
+# ============================================================================
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# ============================================================================
+# Virtual Environments
+# ============================================================================
+venv/
+env/
+ENV/
+.venv/
+.env
+.venv
+pip-log.txt
+pip-delete-this-directory.txt
+.tox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+.hypothesis/
+.pytest_cache/
+
+# ============================================================================
+# Sensitive Data & Databases
+# ============================================================================
+# Environment variables (API keys, secrets)
+.env
+.env.local
+.env.production
+.env.staging
+
+# SQLite databases (contain user data, scam intelligence)
+*.db
+chat_sessions.db
+current_session.db
+scam_session.db
+
+# ============================================================================
+# Development & Testing Files
+# ============================================================================
+# Development scripts (keeping panels for frontend deployment)
+keep_alive.py
+verify_response_keys.py
+view_db.py
+check_db.py
+
+# Test files
+test_api.py
+test_ollama.py
+verify_ollama.py
+
+# ============================================================================
+# IDE & Editor Files
+# ============================================================================
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# ============================================================================
+# OS Files
+# ============================================================================
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# ============================================================================
+# Logs
+# ============================================================================
+*.log
+logs/
+server_log.txt
+
+# ============================================================================
+# Temporary Files
+# ============================================================================
+*.tmp
+*.temp
+.tmp/
+temp/
+
+# ============================================================================
+# Deployment Specific
+# ============================================================================
+# Railway, Render, etc. specific files
+.keep_alive
+render.yaml
+railway.toml
+
+# ============================================================================
+# Documentation & Assets (if not needed)
+# ============================================================================
+# Uncomment if you don't want to commit these
+# *.excalidraw
+# docs/

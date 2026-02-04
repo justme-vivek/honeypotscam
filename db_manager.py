@@ -13,6 +13,7 @@ import logging
 import threading
 from datetime import datetime
 from typing import Dict, List, Optional, Any
+from guvi_reporter import GuviReporter
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("DBManager")
@@ -28,10 +29,6 @@ SCAM_SESSION_DB = "scam_session.db"  # Renamed from scam_sessions.db
 # Session timeout in seconds (5 minutes)
 SESSION_TIMEOUT_SECONDS = 300
 
-# GUVI Callback endpoint (disabled for now)
-GUVI_CALLBACK_URL = "https://hackathon.guvi.in/api/updateHoneyPotFinalResult"
-GUVI_CALLBACK_ENABLED = False  # Set to True to enable pushing to GUVI
-
 # ============================================================================
 # DATABASE MANAGER CLASS
 # ============================================================================
@@ -41,6 +38,7 @@ class DatabaseManager:
     
     def __init__(self):
         self.lock = threading.Lock()
+        self.guvi_reporter = GuviReporter()
         self._init_all_databases()
     
     def _init_all_databases(self):
@@ -157,16 +155,56 @@ class DatabaseManager:
             conn.close()
     
     def update_extracted_intel(self, session_id: str, intelligence: Dict):
-        """Update extracted intelligence for current session."""
+        """Update extracted intelligence for current session by merging with existing data."""
         with self.lock:
             conn = sqlite3.connect(CURRENT_SESSION_DB)
             cursor = conn.cursor()
-            
-            extracted = intelligence.get("extractedIntelligence", {})
-            
+
+            # Get existing intelligence for this session
+            cursor.execute("SELECT * FROM extracted_intel WHERE session_id = ?", (session_id,))
+            existing_row = cursor.fetchone()
+
+            # Parse existing data if it exists
+            existing_extracted = {}
+            if existing_row:
+                try:
+                    existing_extracted = {
+                        "bankAccounts": json.loads(existing_row[1] or "[]"),
+                        "upiIds": json.loads(existing_row[2] or "[]"),
+                        "phishingLinks": json.loads(existing_row[3] or "[]"),
+                        "phoneNumbers": json.loads(existing_row[4] or "[]"),
+                        "suspiciousKeywords": json.loads(existing_row[5] or "[]")
+                    }
+                except (json.JSONDecodeError, TypeError):
+                    # If parsing fails, start with empty dict
+                    existing_extracted = {
+                        "bankAccounts": [],
+                        "upiIds": [],
+                        "phishingLinks": [],
+                        "phoneNumbers": [],
+                        "suspiciousKeywords": []
+                    }
+
+            # Get new intelligence data
+            new_extracted = intelligence.get("extractedIntelligence", {})
+
+            # Merge arrays (combine without duplicates)
+            merged_extracted = {
+                "bankAccounts": list(set(existing_extracted.get("bankAccounts", []) + new_extracted.get("bankAccounts", []))),
+                "upiIds": list(set(existing_extracted.get("upiIds", []) + new_extracted.get("upiIds", []))),
+                "phishingLinks": list(set(existing_extracted.get("phishingLinks", []) + new_extracted.get("phishingLinks", []))),
+                "phoneNumbers": list(set(existing_extracted.get("phoneNumbers", []) + new_extracted.get("phoneNumbers", []))),
+                "suspiciousKeywords": list(set(existing_extracted.get("suspiciousKeywords", []) + new_extracted.get("suspiciousKeywords", [])))
+            }
+
+            # Use new agent notes if provided, otherwise keep existing
+            agent_notes = intelligence.get("agentNotes", "")
+            if not agent_notes and existing_row:
+                agent_notes = existing_row[6] or ""
+
             cursor.execute("""
                 INSERT INTO extracted_intel (
-                    session_id, bank_accounts, upi_ids, phishing_links, 
+                    session_id, bank_accounts, upi_ids, phishing_links,
                     phone_numbers, suspicious_keywords, agent_notes, updated_at
                 )
                 VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
@@ -180,21 +218,21 @@ class DatabaseManager:
                     updated_at = CURRENT_TIMESTAMP
             """, (
                 session_id,
-                json.dumps(extracted.get("bankAccounts", [])),
-                json.dumps(extracted.get("upiIds", [])),
-                json.dumps(extracted.get("phishingLinks", [])),
-                json.dumps(extracted.get("phoneNumbers", [])),
-                json.dumps(extracted.get("suspiciousKeywords", [])),
-                intelligence.get("agentNotes", ""),
+                json.dumps(merged_extracted["bankAccounts"]),
+                json.dumps(merged_extracted["upiIds"]),
+                json.dumps(merged_extracted["phishingLinks"]),
+                json.dumps(merged_extracted["phoneNumbers"]),
+                json.dumps(merged_extracted["suspiciousKeywords"]),
+                agent_notes,
                 # For UPDATE
-                json.dumps(extracted.get("bankAccounts", [])),
-                json.dumps(extracted.get("upiIds", [])),
-                json.dumps(extracted.get("phishingLinks", [])),
-                json.dumps(extracted.get("phoneNumbers", [])),
-                json.dumps(extracted.get("suspiciousKeywords", [])),
-                intelligence.get("agentNotes", "")
+                json.dumps(merged_extracted["bankAccounts"]),
+                json.dumps(merged_extracted["upiIds"]),
+                json.dumps(merged_extracted["phishingLinks"]),
+                json.dumps(merged_extracted["phoneNumbers"]),
+                json.dumps(merged_extracted["suspiciousKeywords"]),
+                agent_notes
             ))
-            
+
             conn.commit()
             conn.close()
     
@@ -396,60 +434,18 @@ class DatabaseManager:
             conn.close()
             logger.info(f"🚨 Scam session {session_id} saved to scam_session.db")
     
-    def get_guvi_payload(self, session_id: str) -> Optional[Dict]:
-        """Get GUVI callback payload format for a scam session."""
-        with self.lock:
-            conn = sqlite3.connect(SCAM_SESSION_DB)
-            conn.row_factory = sqlite3.Row
-            cursor = conn.cursor()
-            
-            cursor.execute("SELECT * FROM scam_intelligence WHERE session_id = ?", (session_id,))
-            row = cursor.fetchone()
-            conn.close()
-            
-            if not row:
-                return None
-            
-            return {
-                "sessionId": session_id,
-                "scamDetected": True,
-                "totalMessagesExchanged": row["total_messages_exchanged"],
-                "extractedIntelligence": {
-                    "bankAccounts": json.loads(row["bank_accounts"]),
-                    "upiIds": json.loads(row["upi_ids"]),
-                    "phishingLinks": json.loads(row["phishing_links"]),
-                    "phoneNumbers": json.loads(row["phone_numbers"]),
-                    "suspiciousKeywords": json.loads(row["suspicious_keywords"])
-                },
-                "agentNotes": row["agent_notes"]
-            }
-    
-    def mark_pushed_to_guvi(self, session_id: str):
-        """Mark a scam session as pushed to GUVI."""
-        with self.lock:
-            conn = sqlite3.connect(SCAM_SESSION_DB)
-            cursor = conn.cursor()
-            
-            cursor.execute("""
-                UPDATE scam_intelligence 
-                SET pushed_to_guvi = 1, pushed_at = CURRENT_TIMESTAMP
-                WHERE session_id = ?
-            """, (session_id,))
-            
-            conn.commit()
-            conn.close()
-    
     # ========================================================================
     # SESSION FINALIZATION (Move from current → archive/scam)
     # ========================================================================
     
-    def finalize_session(self, session_id: str):
+    def finalize_session(self, session_id: str, push_to_guvi: bool = False):
         """
         Finalize a session:
         1. Get data from current_session.db
         2. If confirmed scam (2+ flags): save to scam_sessions.db
         3. Archive to chat_sessions.db (all sessions)
         4. Clear from current_session.db
+        5. Push to GUVI if requested and confirmed scam
         """
         session_data = self.get_current_session_data(session_id)
         
@@ -463,9 +459,9 @@ class DatabaseManager:
         if is_scam:
             self.save_to_scam_session(session_id, session_data)
             
-            # Try to push to GUVI if enabled
-            if GUVI_CALLBACK_ENABLED:
-                self.push_to_guvi(session_id)
+            # Try to push to GUVI if enabled and requested
+            if push_to_guvi and self.guvi_reporter.is_enabled():
+                self.guvi_reporter.push_to_guvi(session_id)
         
         # Archive to chat_sessions.db (ALL sessions go here)
         self.archive_to_chat_sessions(session_id, session_data)
@@ -473,7 +469,7 @@ class DatabaseManager:
         # Clear from current_session.db
         self.clear_current_session(session_id)
         
-        logger.info(f"✅ Session {session_id} finalized (scam={is_scam})")
+        logger.info(f"✅ Session {session_id} finalized (scam={is_scam}, pushed_to_guvi={push_to_guvi})")
         return True
     
     def clear_current_session(self, session_id: str):
@@ -531,86 +527,12 @@ class DatabaseManager:
         
         for session_id in timed_out:
             logger.info(f"⏰ Session {session_id} timed out, finalizing...")
-            self.finalize_session(session_id)
+            self.finalize_session(session_id, push_to_guvi=False)
         
         return len(timed_out)
     
     # ========================================================================
-    # GUVI CALLBACK (Disabled by default)
+    # SINGLETON INSTANCE
     # ========================================================================
-    
-    def push_to_guvi(self, session_id: str) -> bool:
-        """
-        Push scam intelligence to GUVI evaluation endpoint.
-        Only called if GUVI_CALLBACK_ENABLED = True
-        
-        Endpoint: POST https://hackathon.guvi.in/api/updateHoneyPotFinalResult
-        """
-        import requests
-        
-        if not GUVI_CALLBACK_ENABLED:
-            logger.info(f"📤 GUVI callback disabled, skipping push for {session_id}")
-            return False
-        
-        payload = self.get_guvi_payload(session_id)
-        
-        if not payload:
-            logger.error(f"❌ No payload found for session {session_id}")
-            return False
-        
-        try:
-            logger.info(f"📤 Pushing to GUVI: {session_id}")
-            response = requests.post(
-                GUVI_CALLBACK_URL,
-                json=payload,
-                headers={"Content-Type": "application/json"},
-                timeout=10
-            )
-            
-            if response.status_code == 200:
-                self.mark_pushed_to_guvi(session_id)
-                logger.info(f"✅ Successfully pushed {session_id} to GUVI")
-                return True
-            else:
-                logger.error(f"❌ GUVI push failed: {response.status_code} - {response.text}")
-                return False
-                
-        except Exception as e:
-            logger.error(f"❌ GUVI callback error: {e}")
-            return False
-    
-    def push_all_pending_to_guvi(self) -> Dict:
-        """Push all pending scam sessions to GUVI. Returns stats."""
-        if not GUVI_CALLBACK_ENABLED:
-            return {"enabled": False, "message": "GUVI callback is disabled"}
-        
-        with self.lock:
-            conn = sqlite3.connect(SCAM_SESSION_DB)
-            cursor = conn.cursor()
-            
-            cursor.execute("SELECT session_id FROM scam_intelligence WHERE pushed_to_guvi = 0")
-            pending = [row[0] for row in cursor.fetchall()]
-            conn.close()
-        
-        success = 0
-        failed = 0
-        
-        for session_id in pending:
-            if self.push_to_guvi(session_id):
-                success += 1
-            else:
-                failed += 1
-        
-        return {
-            "enabled": True,
-            "total_pending": len(pending),
-            "success": success,
-            "failed": failed
-        }
-
-
-# ============================================================================
-# SINGLETON INSTANCE
-# ============================================================================
 
 db_manager = DatabaseManager()

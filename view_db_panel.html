@@ -294,6 +294,9 @@
         <button class="btn-primary" onclick="loadAllData()">
           🔄 Refresh All
         </button>
+        <button class="btn-danger" onclick="clearAllData()">
+          🗑️ Clear All Data
+        </button>
         <div class="auto-refresh">
           <input
             type="checkbox"
@@ -381,6 +384,36 @@
           console.error("Error loading data:", err);
           document.getElementById("current-content").innerHTML =
             `<div class="empty-state"><div class="icon">❌</div>Error loading data: ${err.message}<br>Make sure the server is running.</div>`;
+        }
+      }
+
+      async function clearAllData() {
+        if (
+          !confirm(
+            "⚠️ WARNING: This will permanently delete ALL data from all databases!\n\nThis action cannot be undone.\n\nAre you sure you want to continue?",
+          )
+        ) {
+          return;
+        }
+
+        const config = getConfig();
+        try {
+          const res = await fetch(`${config.baseUrl}/api/clear-all-data`, {
+            method: "POST",
+            headers: { "x-api-key": config.apiKey },
+          });
+
+          if (res.ok) {
+            alert("✅ All data has been cleared successfully!");
+            // Reload data after clearing
+            await loadAllData();
+          } else {
+            const error = await res.text();
+            alert(`❌ Error clearing data: ${error}`);
+          }
+        } catch (err) {
+          console.error("Error clearing data:", err);
+          alert(`❌ Error clearing data: ${err.message}`);
         }
       }
 
