@@ -147,7 +147,7 @@ class DatabaseManager:
                 cursor.execute("""
                     UPDATE session_info 
                     SET scam_flags = scam_flags + 1,
-                        is_confirmed_scam = CASE WHEN scam_flags + 1 >= 2 THEN 1 ELSE 0 END
+                        is_confirmed_scam = CASE WHEN scam_flags + 1 >= 1 THEN 1 ELSE 0 END
                     WHERE session_id = ?
                 """, (session_id,))
             

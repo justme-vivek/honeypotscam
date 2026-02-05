@@ -61,7 +61,6 @@ class GuviReporter:
                     return None
 
                 return {
-                    "sessionId": session_id,
                     "scamDetected": True,
                     "totalMessagesExchanged": row["total_messages_exchanged"],
                     "extractedIntelligence": {
@@ -182,6 +181,40 @@ class GuviReporter:
 
         logger.info(f"📊 GUVI push summary: {result}")
         return result
+
+    def push_direct_to_guvi(self, payload: Dict) -> bool:
+        """
+        Push intelligence payload directly to GUVI without requiring scam_session.db.
+        
+        Args:
+            payload: Dict in GUVI format with scamDetected, totalMessagesExchanged, etc.
+            
+        Returns:
+            bool: True if successful, False otherwise
+        """
+        if not self.is_enabled():
+            logger.info("📤 GUVI callback disabled, skipping direct push")
+            return False
+        
+        try:
+            logger.info(f"📤 Pushing directly to GUVI: {json.dumps(payload)[:200]}...")
+            response = requests.post(
+                GUVI_CALLBACK_URL,
+                json=payload,
+                headers={"Content-Type": "application/json"},
+                timeout=10
+            )
+            
+            if response.status_code == 200:
+                logger.info(f"✅ Successfully pushed to GUVI")
+                return True
+            else:
+                logger.error(f"❌ GUVI push failed: {response.status_code} - {response.text}")
+                return False
+                
+        except Exception as e:
+            logger.error(f"❌ GUVI callback error: {e}")
+            return False
 
     def get_pending_sessions_count(self) -> int:
         """

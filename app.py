@@ -25,7 +25,7 @@ import os
 from dotenv import load_dotenv
 from gemma_responder import process_incoming_message
 from db_manager import db_manager
-from guvi_reporter import GuviReporter
+from guvi_reporter import GuviReporter, guvi_reporter
 
 
 
@@ -492,6 +492,40 @@ async def handle_scam_message(request: Request):
         latency_ms = (time.time() - processing_start) * 1000
         logger.info(f"✅ Session {session_id} processed in {latency_ms:.2f}ms")
         
+        # Get session data for GUVI push
+        session_data = db_manager.get_current_session_data(session_id)
+        total_messages = len(session_data.get("messages", [])) if session_data else 1
+        extracted_intel = session_data.get("extracted_intel", {}) if session_data else {}
+        
+        # Helper to safely parse JSON fields
+        def safe_json_parse(val, default=[]):
+            if not val:
+                return default
+            if isinstance(val, list):
+                return val
+            try:
+                return json.loads(val) if isinstance(val, str) else default
+            except:
+                return default
+        
+        # Build GUVI format payload and push immediately
+        guvi_payload = {
+            "sessionId": session_id,
+            "scamDetected": is_scam_flag or scam_status.get("is_confirmed_scam", False),
+            "totalMessagesExchanged": total_messages,
+            "extractedIntelligence": {
+                "bankAccounts": safe_json_parse(extracted_intel.get("bank_accounts") if extracted_intel else None),
+                "upiIds": safe_json_parse(extracted_intel.get("upi_ids") if extracted_intel else None),
+                "phishingLinks": safe_json_parse(extracted_intel.get("phishing_links") if extracted_intel else None),
+                "phoneNumbers": safe_json_parse(extracted_intel.get("phone_numbers") if extracted_intel else None),
+                "suspiciousKeywords": safe_json_parse(extracted_intel.get("suspicious_keywords") if extracted_intel else None)
+            },
+            "agentNotes": extracted_intel.get("agent_notes", "") if extracted_intel else ""
+        }
+        
+        # Push to GUVI immediately after each message
+        guvi_reporter.push_direct_to_guvi(guvi_payload)
+        
         # Return response matching problem statement format exactly:
         # { "status": "success", "reply": "message text" }
         
@@ -661,6 +695,7 @@ async def end_session(request: Request):
     """
     Finalize a session - moves data from current_session.db to archive.
     If confirmed scam (2+ flags), also saves to scam_session.db and pushes to GUVI.
+    Returns extracted intelligence in GUVI format.
     
     REQUIRES: x-api-key header
     Body: { "sessionId": "xxx" }
@@ -677,8 +712,47 @@ async def end_session(request: Request):
                 content={"status": "error", "message": "sessionId is required"}
             )
         
-        # Get session status before finalizing
+        # Get session data BEFORE finalizing
+        session_data = db_manager.get_current_session_data(session_id)
         scam_status = db_manager.get_session_scam_status(session_id)
+        
+        if not session_data:
+            return JSONResponse(
+                status_code=404,
+                content={"status": "error", "message": f"Session {session_id} not found"}
+            )
+        
+        # Get message count
+        messages = session_data.get("messages", [])
+        total_messages = len(messages)
+        
+        # Get extracted intelligence
+        extracted_intel = session_data.get("extracted_intel", {})
+        
+        # Parse JSON fields from extracted_intel (stored as JSON strings in DB)
+        def safe_json_parse(val, default=[]):
+            if not val:
+                return default
+            if isinstance(val, list):
+                return val
+            try:
+                return json.loads(val) if isinstance(val, str) else default
+            except:
+                return default
+        
+        # Build GUVI format response (exact format required)
+        guvi_format_response = {
+            "scamDetected": scam_status.get("is_confirmed_scam", False) or scam_status.get("scam_flags", 0) > 0,
+            "totalMessagesExchanged": total_messages,
+            "extractedIntelligence": {
+                "bankAccounts": safe_json_parse(extracted_intel.get("bank_accounts")),
+                "upiIds": safe_json_parse(extracted_intel.get("upi_ids")),
+                "phishingLinks": safe_json_parse(extracted_intel.get("phishing_links")),
+                "phoneNumbers": safe_json_parse(extracted_intel.get("phone_numbers")),
+                "suspiciousKeywords": safe_json_parse(extracted_intel.get("suspicious_keywords"))
+            },
+            "agentNotes": extracted_intel.get("agent_notes", "") if extracted_intel else ""
+        }
         
         # Finalize the session (moves to archive, scam_sessions if confirmed)
         success = db_manager.finalize_session(session_id, push_to_guvi=True)
@@ -687,16 +761,12 @@ async def end_session(request: Request):
             # Remove from active sessions
             metrics.sessions_active.discard(session_id)
             
-            return JSONResponse(content={
-                "status": "success",
-                "message": f"Session {session_id} finalized",
-                "was_scam": scam_status["is_confirmed_scam"],
-                "scam_flags": scam_status["scam_flags"]
-            })
+            # Return the GUVI format response directly
+            return JSONResponse(content=guvi_format_response)
         else:
             return JSONResponse(
-                status_code=404,
-                content={"status": "error", "message": f"Session {session_id} not found"}
+                status_code=500,
+                content={"status": "error", "message": f"Failed to finalize session {session_id}"}
             )
     
     except Exception as e:
