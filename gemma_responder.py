@@ -22,7 +22,10 @@ NVIDIA_MODEL = os.getenv("NVIDIA_MODEL")
 NVIDIA_API_KEY = os.getenv("NVIDIA_API_KEY")
 
 # Set OPENAI_API_KEY for OpenAI client compatibility
-os.environ['OPENAI_API_KEY'] = NVIDIA_API_KEY
+if NVIDIA_API_KEY:
+    os.environ['OPENAI_API_KEY'] = NVIDIA_API_KEY
+else:
+    raise ValueError("NVIDIA_API_KEY environment variable is not set. Please configure it in your deployment environment.")
 
 client = OpenAI(base_url=NVIDIA_BASE_URL, api_key=NVIDIA_API_KEY)
 
